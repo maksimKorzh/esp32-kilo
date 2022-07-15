@@ -265,11 +265,11 @@ void editorRefreshScreen() {
   editorDrawRows(&ab);
   editorDrawStatusBar(&ab);
   editorDrawMessageBar(&ab);
+  abAppend(&ab, "\x1b[?25h", 6);  // show cursor
   char buf[32];
   snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
                                             (E.rx - E.coloff) + 1);
   abAppend(&ab, buf, strlen(buf));
-  abAppend(&ab, "\x1b[?25h", 6);  // show cursor
   Terminal.write(ab.b, ab.len);
   abFree(&ab);
 }
@@ -484,8 +484,6 @@ void setup() {
   DisplayController.begin();
   DisplayController.setResolution(VGA_640x480_60Hz);
   Terminal.begin(&DisplayController);
-  Terminal.enableCursor(true);
-  //Terminal.write("\x1B[?7l"); // disable line wrap
   
   // init SPIFFS
   if(!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)){
@@ -494,27 +492,11 @@ void setup() {
   }
   
   // init text editor
-  initEditor();  
-  
-  //writeFile(SPIFFS, "/hello.txt", "this is a line");
-  //writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\r this is line 3 \n\r");
-  
-  //writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\n\r\n\r this is line 4 \n\r this is line 5 \n\r");
-  //writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is  \t\t\t   line 2 \n\r123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E\n\r this is line 4 \n\r this is line 5 \n\r this is line 6 \n\r this is line 7 \n\r this is line 8 \n\r this is line 9 \n\r this is line 10 \n\r this is line 11 \n\r this is line 12 \n\r this is line 13 \n\r this is line 14 \n\r this is line 15 \n\r this is line 16 \n\r this is line 17 \n\r this is line 18 \n\r this is line 19 \n\r");
+  initEditor();    
   
   writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\n\r\n\r this is line 4 \n\r this is line 5 \n\r this is line 6 \n\r this is line 7 \n\r this is line 8 \n\r this is line 9 \n\r this is line 10 \n\r this is line 11 \n\r this is line 12 \n\r this is line 13 \n\r this is line 14 \n\r this is line 15 \n\r this is line 16 \n\r this is line 17 \n\r this is line 18 \n\r this is line 19 \n\r this is line 20 \n\r this is line 21 \n\r this is line 22 \n\r this is line 23 \n\r this is line 24 \n\r this is line 25 \n\r this is line 26 \n\r this is line 27 \n\r this is line  \n\r this is line 28 \n\r this is line 30 \n\r");
   editorOpen(SPIFFS, "/hello.txt");
   editorSetStatusMessage("                                HELP: Ctrl-Q = quit");
-  
-  
-  /*Terminal.write("\x1b[?25l");  //hide
-  Terminal.write("\x1b[H");     //home
-
-  Terminal.write("\x1b[?7l"); // disable line wrap
-  Terminal.write("this is first \x1b[m\n\r this is line 2 \x1b[m\n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\x1b[m\n\r\n\r this is line 4 \x1b[m\n\r this is line 5 \x1b[m\n\r");
-  
-  //Terminal.write("\x1b[m");     // clear line
-  Terminal.write("\x1b[?25h");  // show*/
 }
 
 void loop() {
