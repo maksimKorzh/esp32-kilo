@@ -61,13 +61,46 @@ void editorAppendRow(char *s, size_t len) {
   E.numrows++;
 }
 
-void editorOpen() {
-  char *line1 = "Hello, world!";
-  editorAppendRow(line1, 13);
-  char *line2 = "This is an epic line 2";
-  editorAppendRow(line2, 22);
-  char *line3 = "And this one is the third and the last one for now...";
-  editorAppendRow(line3, 53);
+size_t getline(char *buf, size_t *size, File *stream)
+{
+  char c;
+  size_t count = 0;
+  
+  while (c != '\r' || c != '\r') {
+    if (stream->available()) {
+      c = stream->read();
+      buf[count] = c;
+      count++;
+    } else {
+      if (count == 0) return -1;
+      else break;
+    }
+  }
+  
+  buf[count] = '\0';
+  return count;
+}
+
+void editorOpen(fs::FS &fs, const char *filename) {
+  File fp = fs.open(filename);
+  if(!fp || fp.isDirectory()) {
+    xprintf("− failed to open file for reading\r\n");
+    return;
+  }
+
+  if (!fp) { xprintf("No file found\r\n"); return; }
+  char line[200];  // 200 chars per line allowed
+  size_t linecap = 0;
+  ssize_t linelen;
+
+  while ((linelen = getline(line, &linecap, &fp)) != -1) {
+    while (linelen > 0 && (line[linelen - 1] == '\n' ||
+                           line[linelen - 1] == '\r'))
+      linelen--;  
+    editorAppendRow(line, linelen);
+  }
+  
+  fp.close();
 }
 
 void abAppend(struct abuf *ab, const char *s, int len) {
@@ -230,6 +263,36 @@ void editorProcessKeypress() {
   }
 }
 
+void readFile(fs::FS &fs, const char * path){
+   Serial.printf("Reading file: %s\r\n", path);
+
+   File file = fs.open(path);
+   if(!file || file.isDirectory()){
+       Serial.println("− failed to open file for reading");
+       return;
+   }
+
+   Serial.println("− read from file:");
+   while(file.available()){
+      Serial.write(file.read());
+   }
+}
+
+void writeFile(fs::FS &fs, const char * path, const char * message){
+   xprintf("Writing file: %s\r\n", path);
+
+   File file = fs.open(path, FILE_WRITE);
+   if(!file){
+      xprintf("− failed to open file for writing\n\r");
+      return;
+   }
+   if(file.print(message)){
+      xprintf("− file written\n\r");
+   }else {
+      xprintf("− frite failed\n\r");
+   }
+}
+
 void initEditor() {
   E.cx = 0;
   E.cy = 0;
@@ -289,8 +352,10 @@ void setup() {
   }
   
   // init text editor
-  initEditor();
-  editorOpen();
+  initEditor();  
+  editorOpen(SPIFFS, "/hello.txt");
+  
+  //writeFile(SPIFFS, "/hello.txt", "/*\r\n    KILO text editor\r\n*/\r\n\r\n#include \"fabgl.h\"\r\n#include \"SPIFFS.h\"\r\n\r\nfabgl::VGA16Controller   DisplayController;\r\nfabgl::Terminal          Terminal;\r\nfabgl::PS2Controller     PS2Controller;\r\n\r\n/* You only need to format SPIFFS the first time you run a\r\n   test or else use the SPIFFS plugin to create a partition\r\n   https://github.com/me−no−dev/arduino−esp32fs−plugin */\r\n#define FORMAT_SPIFFS_IF_FAILED false\r\n\r\n#define KILO_VERSION \"0.0.1\"\r\n\r\nenum editorKey {\r\n  ARROW_LEFT = 1000,\r\n  ARROW_RIGHT,\r\n  ARROW_UP,\r\n  ARROW_DOWN,\r\n  DEL_KEY,\r\n  HOME_KEY,\r\n  END_KEY,\r\n  PAGE_UP,\r\n  PAGE_DOWN,\r\n  ENTER_KEY,\r\n  BACKSPACE_KEY,\r\n  ESCAPE_KEY\r\n};\r\n\r\ntypedef struct erow {\r\n  int size;\r\n  char *chars;\r\n} erow;\r\n\r\nstruct editorConfig {\r\n  int cx, cy;\r\n  int screenrows;\r\n  int screencols;\r\n  int numrows;\r\n  erow *row;\r\n}; struct editorConfig E;\r\n\r\nstruct abuf {\r\n  char *b;\r\n  int len;\r\n};\r\n\r\n#define ABUF_INIT {NULL, 0}\r\n\r\nvoid editorAppendRow(char *s, size_t len) {\r\n  E.row = (erow *)realloc(E.row, sizeof(erow) * (E.numrows + 1));\r\n  int at = E.numrows;\r\n  E.row[at].size = len;\r\n  E.row[at].chars = (char *)malloc(len + 1);\r\n  memcpy(E.row[at].chars, s, len);\r\n  E.row[at].chars[len] = '\0';\r\n  E.numrows++;\r\n}\r\n");
 }
 
 void loop() {
