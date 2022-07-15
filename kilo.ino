@@ -219,13 +219,11 @@ void editorDrawRows(struct abuf *ab) {
     } else {
       int len = E.row[filerow].rsize - E.coloff;
       if (len < 0) len = 0;
-      if (len > E.screencols) len = E.screencols;
+      if (len > E.screencols) len = E.screencols - 1;
       abAppend(ab, &E.row[filerow].render[E.coloff], len);
     }
     abAppend(ab, "\x1b[K", 3);     // clear line
-    //if (y < E.screenrows - 1) {
-      abAppend(ab, "\n\r", 2);
-    //}
+    abAppend(ab, "\n\r", 2);
   }
 }
 
@@ -272,10 +270,7 @@ void editorRefreshScreen() {
                                             (E.rx - E.coloff) + 1);
   abAppend(&ab, buf, strlen(buf));
   abAppend(&ab, "\x1b[?25h", 6);  // show cursor
-  //abAppend(&ab, " ", 1);
-  Terminal.write("\x1B[?7l"); // disable line wrap
   Terminal.write(ab.b, ab.len);
-  //xwritef("%s", ab.len, ab.b);
   abFree(&ab);
 }
 
@@ -421,32 +416,32 @@ void editorProcessKeypress() {
 }
 
 void readFile(fs::FS &fs, const char * path){
-   Serial.printf("Reading file: %s\n\r", path);
+   //Serial.printf("Reading file: %s\n\r", path);
 
    File file = fs.open(path);
    if(!file || file.isDirectory()){
-       Serial.println("− failed to open file for reading");
+       //Serial.println("− failed to open file for reading");
        return;
    }
 
-   Serial.println("− read from file:");
+   //Serial.println("− read from file:");
    while(file.available()){
       Serial.write(file.read());
    }
 }
 
 void writeFile(fs::FS &fs, const char * path, const char * message){
-   xprintf("Writing file: %s\n\r", path);
+   //xprintf("Writing file: %s\n\r", path);
 
    File file = fs.open(path, FILE_WRITE);
    if(!file){
-      xprintf("− failed to open file for writing\n\r");
+      //xprintf("− failed to open file for writing\n\r");
       return;
    }
    if(file.print(message)){
-      xprintf("− file written\n\r");
+      //xprintf("− file written\n\r");
    }else {
-      xprintf("− frite failed\n\r");
+      //xprintf("− frite failed\n\r");
    }
 }
 
@@ -490,6 +485,7 @@ void setup() {
   DisplayController.setResolution(VGA_640x480_60Hz);
   Terminal.begin(&DisplayController);
   Terminal.enableCursor(true);
+  //Terminal.write("\x1B[?7l"); // disable line wrap
   
   // init SPIFFS
   if(!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)){
@@ -503,15 +499,22 @@ void setup() {
   //writeFile(SPIFFS, "/hello.txt", "this is a line");
   //writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\r this is line 3 \n\r");
   
-  writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is  \t\t\t   line 2 \n\r123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E\n\r this is line 4 \n\r this is line 5 \n\r this is line 6 \n\r this is line 7 \n\r this is line 8 \n\r this is line 9 \n\r this is line 10 \n\r this is line 11 \n\r this is line 12 \n\r this is line 13 \n\r this is line 14 \n\r this is line 15 \n\r this is line 16 \n\r this is line 17 \n\r this is line 18 \n\r this is line 19 \n\r");
+  //writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\n\r\n\r this is line 4 \n\r this is line 5 \n\r");
+  //writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is  \t\t\t   line 2 \n\r123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E\n\r this is line 4 \n\r this is line 5 \n\r this is line 6 \n\r this is line 7 \n\r this is line 8 \n\r this is line 9 \n\r this is line 10 \n\r this is line 11 \n\r this is line 12 \n\r this is line 13 \n\r this is line 14 \n\r this is line 15 \n\r this is line 16 \n\r this is line 17 \n\r this is line 18 \n\r this is line 19 \n\r");
   
-  //writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\n\r this is line 4 \n\r this is line 5 \n\r this is line 6 \n\r this is line 7 \n\r this is line 8 \n\r this is line 9 \n\r this is line 10 \n\r this is line 11 \n\r this is line 12 \n\r this is line 13 \n\r this is line 14 \n\r this is line 15 \n\r this is line 16 \n\r this is line 17 \n\r this is line 18 \n\r this is line 19 \n\r this is line 20 \n\r this is line 21 \n\r this is line 22 \n\r this is line 23 \n\r this is line 24 \n\r this is line 25 \n\r this is line 26 \n\r this is line 27 \n\r this is line  \n\r this is line 28 \n\r this is line 30 \n\r");
-  //editorOpen(SPIFFS, "/hello.txt");
-  editorSetStatusMessage("                                 HELP: Ctrl-Q = quit");
+  writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\n\r\n\r this is line 4 \n\r this is line 5 \n\r this is line 6 \n\r this is line 7 \n\r this is line 8 \n\r this is line 9 \n\r this is line 10 \n\r this is line 11 \n\r this is line 12 \n\r this is line 13 \n\r this is line 14 \n\r this is line 15 \n\r this is line 16 \n\r this is line 17 \n\r this is line 18 \n\r this is line 19 \n\r this is line 20 \n\r this is line 21 \n\r this is line 22 \n\r this is line 23 \n\r this is line 24 \n\r this is line 25 \n\r this is line 26 \n\r this is line 27 \n\r this is line  \n\r this is line 28 \n\r this is line 30 \n\r");
+  editorOpen(SPIFFS, "/hello.txt");
+  editorSetStatusMessage("                                HELP: Ctrl-Q = quit");
   
-  //xprintf("\e[?7l"); // disable line wrap
-  //Terminal.write("this is first \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\n\r\n\r and if some line goes after? \n\r how much you ignore?\n\r and then even more???\n\r \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!");
-  //Terminal.write("text\twith\ttabs\t\t\t...");
+  
+  /*Terminal.write("\x1b[?25l");  //hide
+  Terminal.write("\x1b[H");     //home
+
+  Terminal.write("\x1b[?7l"); // disable line wrap
+  Terminal.write("this is first \x1b[m\n\r this is line 2 \x1b[m\n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\x1b[m\n\r\n\r this is line 4 \x1b[m\n\r this is line 5 \x1b[m\n\r");
+  
+  //Terminal.write("\x1b[m");     // clear line
+  Terminal.write("\x1b[?25h");  // show*/
 }
 
 void loop() {
