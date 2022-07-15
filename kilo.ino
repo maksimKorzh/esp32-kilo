@@ -14,10 +14,7 @@ fabgl::PS2Controller     PS2Controller;
    https://github.com/me−no−dev/arduino−esp32fs−plugin */
 #define FORMAT_SPIFFS_IF_FAILED false
 
-const uint8_t ROWS = 25;
-const uint8_t COLS = 80;
-uint8_t CURX = 0;
-uint8_t CURY = 0;
+#define KILO_VERSION "0.0.1"
 
 enum editorKey {
   ARROW_LEFT = 1000,
@@ -34,12 +31,44 @@ enum editorKey {
   ESCAPE_KEY
 };
 
+typedef struct erow {
+  int size;
+  char *chars;
+} erow;
+
+struct editorConfig {
+  int cx, cy;
+  int screenrows;
+  int screencols;
+  int numrows;
+  erow *row;
+}; struct editorConfig E;
+
 struct abuf {
   char *b;
   int len;
 };
 
 #define ABUF_INIT {NULL, 0}
+
+void editorAppendRow(char *s, size_t len) {
+  E.row = (erow *)realloc(E.row, sizeof(erow) * (E.numrows + 1));
+  int at = E.numrows;
+  E.row[at].size = len;
+  E.row[at].chars = (char *)malloc(len + 1);
+  memcpy(E.row[at].chars, s, len);
+  E.row[at].chars[len] = '\0';
+  E.numrows++;
+}
+
+void editorOpen() {
+  char *line1 = "Hello, world!";
+  editorAppendRow(line1, 13);
+  char *line2 = "This is an epic line 2";
+  editorAppendRow(line2, 22);
+  char *line3 = "And this one is the third and the last one for now...";
+  editorAppendRow(line3, 53);
+}
 
 void abAppend(struct abuf *ab, const char *s, int len) {
   char *newb = (char *)realloc(ab->b, ab->len + len);
@@ -55,24 +84,30 @@ void abFree(struct abuf *ab) {
 
 void editorDrawRows(struct abuf *ab) {
   int y;
-  for (y = 0; y < ROWS; y++) {
-    if (y == ROWS / 3) {
-      char welcome[80];
-      int welcomelen = snprintf(welcome, sizeof(welcome),
-        "Kilo editor -- version 0.0.1");
-      if (welcomelen > COLS) welcomelen = COLS;
-      int padding = (COLS - welcomelen) / 2;
-      if (padding) {
+  for (y = 0; y < E.screenrows; y++) {
+    if (y >= E.numrows) {
+      if (E.numrows == 0 && y == E.screenrows / 3) {
+        char welcome[80];
+        int welcomelen = snprintf(welcome, sizeof(welcome),
+          "Kilo editor -- version %s", KILO_VERSION);
+        if (welcomelen > E.screencols) welcomelen = E.screencols;
+        int padding = (E.screencols - welcomelen) / 2;
+        if (padding) {
+          abAppend(ab, "~", 1);
+          padding--;
+        }
+        while (padding--) abAppend(ab, " ", 1);
+        abAppend(ab, welcome, welcomelen);
+      } else {
         abAppend(ab, "~", 1);
-        padding--;
       }
-      while (padding--) abAppend(ab, " ", 1);
-      abAppend(ab, welcome, welcomelen);
     } else {
-      abAppend(ab, "~", 1);
+      int len = E.row[y].size;
+      if (len > E.screencols) len = E.screencols;
+      abAppend(ab, E.row[y].chars, len);
     }
     abAppend(ab, "\x1b[K", 3);
-    if (y < ROWS - 1) {
+    if (y < E.screenrows - 1) {
       abAppend(ab, "\r\n", 2);
     }
   }
@@ -85,7 +120,7 @@ void editorRefreshScreen() {
   editorDrawRows(&ab);
   
   char buf[32];
-  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", CURY + 1, CURX + 1);
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
   abAppend(&ab, buf, strlen(buf));
   
   abAppend(&ab, "\x1b[?25h", 6);  // show cursor
@@ -112,23 +147,23 @@ int getCursorPosition(int *rows, int *cols) {
 void editorMoveCursor(int key) {
   switch (key) {
     case ARROW_LEFT:
-      if (CURX != 0) {
-        CURX--;
+      if (E.cx != 0) {
+        E.cx--;
       }
       break;
     case ARROW_RIGHT:
-      if (CURX != COLS - 1) {
-        CURX++;
+      if (E.cx != E.screencols - 1) {
+        E.cx++;
       }
       break;
     case ARROW_UP:
-      if (CURY != 0) {
-        CURY--;
+      if (E.cy != 0) {
+        E.cy--;
       }
       break;
     case ARROW_DOWN:
-      if (CURY != ROWS - 1) {
-        CURY++;
+      if (E.cy != E.screenrows - 1) {
+        E.cy++;
       }
       break;
   }
@@ -176,12 +211,12 @@ void editorProcessKeypress() {
   int c = editorReadKey();
   //xprintf("Key: %d %c\r\n", c, c);
   switch (c) {
-    case HOME_KEY: CURX = 0; break;
-    case END_KEY: CURX = COLS - 1; break;
+    case HOME_KEY: E.cx = 0; break;
+    case END_KEY: E.cx = E.screencols - 1; break;
     case PAGE_UP:
     case PAGE_DOWN:
       {
-        int times = COLS;
+        int times = E.screencols;
         while (times--)
           editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
       }
@@ -193,6 +228,15 @@ void editorProcessKeypress() {
       editorMoveCursor(c);
       break;
   }
+}
+
+void initEditor() {
+  E.cx = 0;
+  E.cy = 0;
+  E.screenrows = 25;
+  E.screencols = 80;
+  E.numrows = 0;
+  E.row = NULL;
 }
 
 void xwritef(const char * format, int size, ...)
@@ -244,9 +288,9 @@ void setup() {
     return;
   }
   
-  
-  
-  
+  // init text editor
+  initEditor();
+  editorOpen();
 }
 
 void loop() {
