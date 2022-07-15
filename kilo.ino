@@ -19,6 +19,21 @@ const uint8_t COLS = 80;
 uint8_t CURX = 0;
 uint8_t CURY = 0;
 
+enum editorKey {
+  ARROW_LEFT = 1000,
+  ARROW_RIGHT,
+  ARROW_UP,
+  ARROW_DOWN,
+  DEL_KEY,
+  HOME_KEY,
+  END_KEY,
+  PAGE_UP,
+  PAGE_DOWN,
+  ENTER_KEY,
+  BACKSPACE_KEY,
+  ESCAPE_KEY
+};
+
 struct abuf {
   char *b;
   int len;
@@ -94,63 +109,90 @@ int getCursorPosition(int *rows, int *cols) {
   return 0;
 }
 
-void editorMoveCursor(char key) {
+void editorMoveCursor(int key) {
   switch (key) {
-    case 0x6B:  // left arrow
-      CURX--;
+    case ARROW_LEFT:
+      if (CURX != 0) {
+        CURX--;
+      }
       break;
-    case 0x74:  // right arrow
-      CURX++;
+    case ARROW_RIGHT:
+      if (CURX != COLS - 1) {
+        CURX++;
+      }
       break;
-    case 0x75:  // up arrow
-      CURY--;
+    case ARROW_UP:
+      if (CURY != 0) {
+        CURY--;
+      }
       break;
-    case 0x72:  // down arrow
-      CURY++;
+    case ARROW_DOWN:
+      if (CURY != ROWS - 1) {
+        CURY++;
+      }
       break;
-  } //editorRefreshScreen();
+  }
 }
 
-char editorReadKey() {
-  char c = Serial.read();
-  if (c == 0xFF) {
-    auto keyboard = PS2Controller.keyboard();
-    if (keyboard->virtualKeyAvailable()) {
-      VirtualKeyItem item;
-      if (keyboard->getNextVirtualKey(&item)) {              
-        if (item.down) {
-          // debug
-          /*xprintf("Scan codes: ");
-          for (int i = 0; i < 8 && item.scancode[i] != 0; i++)
-            xprintf("%02X ", item.scancode[i]);
-          xprintf("%c\n", item.ASCII);*/
-          // handle shortcuts
-          switch (item.scancode[0]) {
-            case 0x5A: xprintf("\n"); break;        // ENTER
-            
-            
-          }
-          
-          switch (item.scancode[1]) {
-            case 0x6B:  // left arrow
-            case 0x74:  // right arrow
-            case 0x75:  // up arrow
-            case 0x72:  // down arrow
-              editorMoveCursor(item.scancode[1]);
-              break;
-          }
-        }        
-        
-        return item.down ? item.ASCII : 0x00;
+int editorReadKey() {
+  auto keyboard = PS2Controller.keyboard();
+  while (!keyboard->virtualKeyAvailable()) {/* wait for a key press */}
+  VirtualKeyItem item;
+  if (keyboard->getNextVirtualKey(&item)) {
+  
+    // debug
+    /*if (item.down) {
+      xprintf("Scan codes: ");
+      xprintf("0x%02X 0x%02X 0x%02X\n\r", item.scancode[0], item.scancode[1], item.scancode[2]);
+    }*/
+    
+    if (item.down) {
+      if (item.scancode[0] == 0xE0) {
+        switch (item.scancode[1]) {
+          case 0x6B: return ARROW_LEFT;
+          case 0x74: return ARROW_RIGHT;
+          case 0x75: return ARROW_UP;
+          case 0x72: return ARROW_DOWN;
+          case 0x71: return DEL_KEY;
+          case 0x6C: return HOME_KEY;
+          case 0x69: return END_KEY;
+          case 0x7D: return PAGE_UP;
+          case 0x7A: return PAGE_DOWN;
+        }
+      } else {
+        switch (item.scancode[0]) {
+          case 0x76: return ESCAPE_KEY;
+          case 0x5A: return ENTER_KEY;
+          case 0x66: return BACKSPACE_KEY;
+          default: return item.ASCII;
+        }
       }
-    } return 0x00;
-  } else return c;
+    }
+  }
+
 }
 
 void editorProcessKeypress() {
-  editorReadKey();
-  //while (!editorReadKey()) {};
-  //Terminal.enableCursor(true); // show cursor
+  int c = editorReadKey();
+  //xprintf("Key: %d %c\r\n", c, c);
+  switch (c) {
+    case HOME_KEY: CURX = 0; break;
+    case END_KEY: CURX = COLS - 1; break;
+    case PAGE_UP:
+    case PAGE_DOWN:
+      {
+        int times = COLS;
+        while (times--)
+          editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+      }
+      break;
+    case ARROW_UP:
+    case ARROW_DOWN:
+    case ARROW_LEFT:
+    case ARROW_RIGHT:
+      editorMoveCursor(c);
+      break;
+  }
 }
 
 void xwritef(const char * format, int size, ...)
@@ -194,13 +236,17 @@ void setup() {
   DisplayController.begin();
   DisplayController.setResolution(VGA_640x480_60Hz);
   Terminal.begin(&DisplayController);
-  //Terminal.enableCursor(true);
+  Terminal.enableCursor(true);
   
   // init SPIFFS
   if(!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)){
     xprintf("SPIFFS Mount Failed");
     return;
   }
+  
+  
+  
+  
 }
 
 void loop() {
