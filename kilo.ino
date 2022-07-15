@@ -219,7 +219,7 @@ void editorDrawRows(struct abuf *ab) {
     } else {
       int len = E.row[filerow].rsize - E.coloff;
       if (len < 0) len = 0;
-      if (len > E.screencols) len = E.screencols - 1;
+      if (len >= E.screencols) len = E.screencols - 1;
       abAppend(ab, &E.row[filerow].render[E.coloff], len);
     }
     abAppend(ab, "\x1b[K", 3);     // clear line
@@ -228,12 +228,12 @@ void editorDrawRows(struct abuf *ab) {
 }
 
 void editorDrawStatusBar(struct abuf *ab) {
-   abAppend(ab, "\x1b[7m", 4);
+  abAppend(ab, "\x1b[7m", 4);
   char status[80], rstatus[80];
   int len = snprintf(status, sizeof(status), "%.20s - %d lines",
     E.filename ? E.filename : "[No Name]", E.numrows);
-  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d",
-    E.cy + 1, E.numrows);
+  int rlen = snprintf(rstatus, sizeof(rstatus), "row %d, col %d",
+    E.cy + 1, E.cx + 1);
   if (len > E.screencols) len = E.screencols;
   abAppend(ab, status, len);
   while (len < E.screencols) {
