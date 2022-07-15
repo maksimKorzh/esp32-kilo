@@ -84,19 +84,17 @@ size_t getline(char *buf, size_t *size, File *stream)
 void editorOpen(fs::FS &fs, const char *filename) {
   File fp = fs.open(filename);
   if(!fp || fp.isDirectory()) {
-    xprintf("− failed to open file for reading\r\n");
+    xprintf("− failed to open file for reading\n\r");
     return;
   }
 
-  if (!fp) { xprintf("No file found\r\n"); return; }
+  if (!fp) { xprintf("No file found\n\r"); return; }
   char line[200];  // 200 chars per line allowed
   size_t linecap = 0;
   ssize_t linelen;
 
   while ((linelen = getline(line, &linecap, &fp)) != -1) {
-    while (linelen > 0 && (line[linelen - 1] == '\n' ||
-                           line[linelen - 1] == '\r'))
-      linelen--;  
+    while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r')) linelen--;    
     editorAppendRow(line, linelen);
   }
   
@@ -141,7 +139,7 @@ void editorDrawRows(struct abuf *ab) {
     }
     abAppend(ab, "\x1b[K", 3);
     if (y < E.screenrows - 1) {
-      abAppend(ab, "\r\n", 2);
+      abAppend(ab, "\n\r", 2);
     }
   }
 }
@@ -242,7 +240,7 @@ int editorReadKey() {
 
 void editorProcessKeypress() {
   int c = editorReadKey();
-  //xprintf("Key: %d %c\r\n", c, c);
+  //xprintf("Key: %d %c\n\r", c, c);
   switch (c) {
     case HOME_KEY: E.cx = 0; break;
     case END_KEY: E.cx = E.screencols - 1; break;
@@ -264,7 +262,7 @@ void editorProcessKeypress() {
 }
 
 void readFile(fs::FS &fs, const char * path){
-   Serial.printf("Reading file: %s\r\n", path);
+   Serial.printf("Reading file: %s\n\r", path);
 
    File file = fs.open(path);
    if(!file || file.isDirectory()){
@@ -279,7 +277,7 @@ void readFile(fs::FS &fs, const char * path){
 }
 
 void writeFile(fs::FS &fs, const char * path, const char * message){
-   xprintf("Writing file: %s\r\n", path);
+   xprintf("Writing file: %s\n\r", path);
 
    File file = fs.open(path, FILE_WRITE);
    if(!file){
@@ -353,9 +351,11 @@ void setup() {
   
   // init text editor
   initEditor();  
-  editorOpen(SPIFFS, "/hello.txt");
   
-  //writeFile(SPIFFS, "/hello.txt", "/*\r\n    KILO text editor\r\n*/\r\n\r\n#include \"fabgl.h\"\r\n#include \"SPIFFS.h\"\r\n\r\nfabgl::VGA16Controller   DisplayController;\r\nfabgl::Terminal          Terminal;\r\nfabgl::PS2Controller     PS2Controller;\r\n\r\n/* You only need to format SPIFFS the first time you run a\r\n   test or else use the SPIFFS plugin to create a partition\r\n   https://github.com/me−no−dev/arduino−esp32fs−plugin */\r\n#define FORMAT_SPIFFS_IF_FAILED false\r\n\r\n#define KILO_VERSION \"0.0.1\"\r\n\r\nenum editorKey {\r\n  ARROW_LEFT = 1000,\r\n  ARROW_RIGHT,\r\n  ARROW_UP,\r\n  ARROW_DOWN,\r\n  DEL_KEY,\r\n  HOME_KEY,\r\n  END_KEY,\r\n  PAGE_UP,\r\n  PAGE_DOWN,\r\n  ENTER_KEY,\r\n  BACKSPACE_KEY,\r\n  ESCAPE_KEY\r\n};\r\n\r\ntypedef struct erow {\r\n  int size;\r\n  char *chars;\r\n} erow;\r\n\r\nstruct editorConfig {\r\n  int cx, cy;\r\n  int screenrows;\r\n  int screencols;\r\n  int numrows;\r\n  erow *row;\r\n}; struct editorConfig E;\r\n\r\nstruct abuf {\r\n  char *b;\r\n  int len;\r\n};\r\n\r\n#define ABUF_INIT {NULL, 0}\r\n\r\nvoid editorAppendRow(char *s, size_t len) {\r\n  E.row = (erow *)realloc(E.row, sizeof(erow) * (E.numrows + 1));\r\n  int at = E.numrows;\r\n  E.row[at].size = len;\r\n  E.row[at].chars = (char *)malloc(len + 1);\r\n  memcpy(E.row[at].chars, s, len);\r\n  E.row[at].chars[len] = '\0';\r\n  E.numrows++;\r\n}\r\n");
+  //writeFile(SPIFFS, "/hello.txt", "this is a line");
+  //writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\r this is line 3 \n\r");
+  writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\r this is line 3 \n\r this is line 4 \n\r this is line 5 \n\r this is line 6 \n\r this is line 7 \n\r this is line 8 \n\r this is line 9 \n\r this is line 10 \n\r this is line 11 \n\r this is line 12 \n\r this is line 13 \n\r this is line 14 \n\r this is line 15 \n\r this is line 16 \n\r this is line 17 \n\r this is line 18 \n\r this is line 19 \n\r this is line 20 \n\r this is line 21 \n\r this is line 22 \n\r this is line 23 \n\r this is line 24 \n\r this is line 25 \n\r this is line 26 \n\r this is line 27 \n\r this is line  \n\r this is line 28 \n\r this is line 30 \n\r");
+  editorOpen(SPIFFS, "/hello.txt");
 }
 
 void loop() {
