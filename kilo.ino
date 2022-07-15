@@ -48,6 +48,9 @@ struct editorConfig {
   int screencols;
   int numrows;
   erow *row;
+  char *filename;
+  char statusmsg[80];
+  time_t statusmsg_time;
 }; struct editorConfig E;
 
 struct abuf {
@@ -122,6 +125,9 @@ size_t getline(char *buf, size_t *size, File *stream)
 }
 
 void editorOpen(fs::FS &fs, const char *filename) {
+  free(E.filename);
+  E.filename = strdup(filename);
+  
   File fp = fs.open(filename);
   if(!fp || fp.isDirectory()) {
     xprintf("− failed to open file for reading\n\r");
@@ -200,10 +206,40 @@ void editorDrawRows(struct abuf *ab) {
       abAppend(ab, &E.row[filerow].render[E.coloff], len);
     }
     abAppend(ab, "\x1b[K", 3);     // clear line
-    if (y < E.screenrows - 1) {
+    //if (y < E.screenrows - 1) {
       abAppend(ab, "\n\r", 2);
+    //}
+  }
+}
+
+void editorDrawStatusBar(struct abuf *ab) {
+   abAppend(ab, "\x1b[7m", 4);
+  char status[80], rstatus[80];
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines",
+    E.filename ? E.filename : "[No Name]", E.numrows);
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d",
+    E.cy + 1, E.numrows);
+  if (len > E.screencols) len = E.screencols;
+  abAppend(ab, status, len);
+  while (len < E.screencols) {
+    if (E.screencols - len == rlen) {
+      abAppend(ab, rstatus, rlen);
+      break;
+    } else {
+      abAppend(ab, " ", 1);
+      len++;
     }
   }
+  abAppend(ab, "\x1b[m", 3);
+  abAppend(ab, "\r\n", 2);
+}
+
+void editorDrawMessageBar(struct abuf *ab) {
+  abAppend(ab, "\x1b[K", 3);
+  int msglen = strlen(E.statusmsg);
+  if (msglen > E.screencols) msglen = E.screencols;
+  if (msglen && time(NULL) - E.statusmsg_time < 5)
+    abAppend(ab, E.statusmsg, msglen);
 }
 
 void editorRefreshScreen() {
@@ -212,6 +248,8 @@ void editorRefreshScreen() {
   abAppend(&ab, "\x1b[?25l", 6);  // hide cursor
   abAppend(&ab, "\x1b[H", 3);     // cursor home
   editorDrawRows(&ab);
+  editorDrawStatusBar(&ab);
+  editorDrawMessageBar(&ab);
   char buf[32];
   snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
                                             (E.rx - E.coloff) + 1);
@@ -222,6 +260,14 @@ void editorRefreshScreen() {
   Terminal.write(ab.b, ab.len);
   //xwritef("%s", ab.len, ab.b);
   abFree(&ab);
+}
+
+void editorSetStatusMessage(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+  va_end(ap);
+  E.statusmsg_time = time(NULL);
 }
 
 int getCursorPosition(int *rows, int *cols) {
@@ -388,6 +434,10 @@ void initEditor() {
   E.screencols = 80;
   E.numrows = 0;
   E.row = NULL;
+  E.filename = NULL;
+  E.statusmsg[0] = '\0';
+  E.statusmsg_time = 0;
+  E.screenrows -= 2;
 }
 
 void xwritef(const char * format, int size, ...) {
@@ -466,6 +516,7 @@ void setup() {
   
   //writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\n\r this is line 4 \n\r this is line 5 \n\r this is line 6 \n\r this is line 7 \n\r this is line 8 \n\r this is line 9 \n\r this is line 10 \n\r this is line 11 \n\r this is line 12 \n\r this is line 13 \n\r this is line 14 \n\r this is line 15 \n\r this is line 16 \n\r this is line 17 \n\r this is line 18 \n\r this is line 19 \n\r this is line 20 \n\r this is line 21 \n\r this is line 22 \n\r this is line 23 \n\r this is line 24 \n\r this is line 25 \n\r this is line 26 \n\r this is line 27 \n\r this is line  \n\r this is line 28 \n\r this is line 30 \n\r");
   editorOpen(SPIFFS, "/hello.txt");
+  editorSetStatusMessage("                                HELP: Ctrl-Q = quit");
   
   //xprintf("\e[?7l"); // disable line wrap
   //Terminal.write("this is first \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\n\r\n\r and if some line goes after? \n\r how much you ignore?\n\r and then even more???\n\r \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!");
