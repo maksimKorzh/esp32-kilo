@@ -15,6 +15,7 @@ fabgl::PS2Controller     PS2Controller;
 #define FORMAT_SPIFFS_IF_FAILED false
 
 #define KILO_VERSION "0.0.1"
+#define KILO_TAB_STOP 2
 
 enum editorKey {
   ARROW_LEFT = 1000,
@@ -33,11 +34,16 @@ enum editorKey {
 
 typedef struct erow {
   int size;
+  int rsize;
   char *chars;
+  char *render;
 } erow;
 
 struct editorConfig {
   int cx, cy;
+  int rx;
+  int rowoff;
+  int coloff;
   int screenrows;
   int screencols;
   int numrows;
@@ -51,6 +57,37 @@ struct abuf {
 
 #define ABUF_INIT {NULL, 0}
 
+int editorRowCxToRx(erow *row, int cx) {
+  int rx = 0;
+  int j;
+  for (j = 0; j < cx; j++) {
+    if (row->chars[j] == '\t')
+      rx += (KILO_TAB_STOP - 1) - (rx % KILO_TAB_STOP);
+    rx++;
+  }
+  return rx;
+}
+
+void editorUpdateRow(erow *row) {
+  int tabs = 0;
+  int j;
+  for (j = 0; j < row->size; j++)
+    if (row->chars[j] == '\t') tabs++;
+  free(row->render);
+  row->render = (char *)malloc(row->size + tabs*(KILO_TAB_STOP - 1) + 1);
+  int idx = 0;
+  for (j = 0; j < row->size; j++) {
+    if (row->chars[j] == '\t') {
+      row->render[idx++] = ' ';
+      while (idx % KILO_TAB_STOP != 0) row->render[idx++] = ' ';
+    } else {
+      row->render[idx++] = row->chars[j];
+    }
+  }
+  row->render[idx] = '\0';
+  row->rsize = idx;
+}
+
 void editorAppendRow(char *s, size_t len) {
   E.row = (erow *)realloc(E.row, sizeof(erow) * (E.numrows + 1));
   int at = E.numrows;
@@ -58,6 +95,9 @@ void editorAppendRow(char *s, size_t len) {
   E.row[at].chars = (char *)malloc(len + 1);
   memcpy(E.row[at].chars, s, len);
   E.row[at].chars[len] = '\0';
+  E.row[at].rsize = 0;
+  E.row[at].render = NULL;
+  editorUpdateRow(&E.row[at]);
   E.numrows++;
 }
 
@@ -66,7 +106,7 @@ size_t getline(char *buf, size_t *size, File *stream)
   char c;
   size_t count = 0;
   
-  while (c != '\r' || c != '\r') {
+  while (c != '\r') {
     if (stream->available()) {
       c = stream->read();
       buf[count] = c;
@@ -95,6 +135,7 @@ void editorOpen(fs::FS &fs, const char *filename) {
 
   while ((linelen = getline(line, &linecap, &fp)) != -1) {
     while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r')) linelen--;    
+    //xprintf("%d: %s", linelen, line);
     editorAppendRow(line, linelen);
   }
   
@@ -113,10 +154,30 @@ void abFree(struct abuf *ab) {
   free(ab->b);
 }
 
+void editorScroll() {
+  E.rx = 0;
+  if (E.cy < E.numrows) {
+    E.rx = editorRowCxToRx(&E.row[E.cy], E.cx);
+  }
+  if (E.cy < E.rowoff) {
+    E.rowoff = E.cy;
+  }
+  if (E.cy >= E.rowoff + E.screenrows) {
+    E.rowoff = E.cy - E.screenrows + 1;
+  }
+  if (E.rx < E.coloff) {
+    E.coloff = E.rx;
+  }
+  if (E.rx >= E.coloff + E.screencols) {
+    E.coloff = E.rx - E.screencols + 1;
+  }
+}
+
 void editorDrawRows(struct abuf *ab) {
   int y;
   for (y = 0; y < E.screenrows; y++) {
-    if (y >= E.numrows) {
+    int filerow = y + E.rowoff;
+    if (filerow >= E.numrows) {
       if (E.numrows == 0 && y == E.screenrows / 3) {
         char welcome[80];
         int welcomelen = snprintf(welcome, sizeof(welcome),
@@ -133,11 +194,12 @@ void editorDrawRows(struct abuf *ab) {
         abAppend(ab, "~", 1);
       }
     } else {
-      int len = E.row[y].size;
+      int len = E.row[filerow].rsize - E.coloff;
+      if (len < 0) len = 0;
       if (len > E.screencols) len = E.screencols;
-      abAppend(ab, E.row[y].chars, len);
+      abAppend(ab, &E.row[filerow].render[E.coloff], len);
     }
-    abAppend(ab, "\x1b[K", 3);
+    abAppend(ab, "\x1b[K", 3);     // clear line
     if (y < E.screenrows - 1) {
       abAppend(ab, "\n\r", 2);
     }
@@ -145,18 +207,20 @@ void editorDrawRows(struct abuf *ab) {
 }
 
 void editorRefreshScreen() {
+  editorScroll();
   struct abuf ab = ABUF_INIT;
   abAppend(&ab, "\x1b[?25l", 6);  // hide cursor
   abAppend(&ab, "\x1b[H", 3);     // cursor home
   editorDrawRows(&ab);
-  
   char buf[32];
-  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
+                                            (E.rx - E.coloff) + 1);
   abAppend(&ab, buf, strlen(buf));
-  
   abAppend(&ab, "\x1b[?25h", 6);  // show cursor
-  abAppend(&ab, " ", 1);
-  xwritef("%s", ab.len, ab.b);
+  //abAppend(&ab, " ", 1);
+  Terminal.write("\x1B[?7l"); // disable line wrap
+  Terminal.write(ab.b, ab.len);
+  //xwritef("%s", ab.len, ab.b);
   abFree(&ab);
 }
 
@@ -176,15 +240,22 @@ int getCursorPosition(int *rows, int *cols) {
 }
 
 void editorMoveCursor(int key) {
+  erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
   switch (key) {
     case ARROW_LEFT:
       if (E.cx != 0) {
         E.cx--;
+      } else if (E.cy > 0) {
+        E.cy--;
+        E.cx = E.row[E.cy].size;
       }
       break;
     case ARROW_RIGHT:
-      if (E.cx != E.screencols - 1) {
+      if (row && E.cx < row->size) {
         E.cx++;
+      } else if (row && E.cx == row->size) {
+        E.cy++;
+        E.cx = 0;
       }
       break;
     case ARROW_UP:
@@ -193,10 +264,16 @@ void editorMoveCursor(int key) {
       }
       break;
     case ARROW_DOWN:
-      if (E.cy != E.screenrows - 1) {
+      if (E.cy < E.numrows) {
         E.cy++;
       }
       break;
+  }
+  
+  row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+  int rowlen = row ? row->size : 0;
+  if (E.cx > rowlen) {
+    E.cx = rowlen;
   }
 }
 
@@ -243,10 +320,20 @@ void editorProcessKeypress() {
   //xprintf("Key: %d %c\n\r", c, c);
   switch (c) {
     case HOME_KEY: E.cx = 0; break;
-    case END_KEY: E.cx = E.screencols - 1; break;
+    case END_KEY:
+      if (E.cy < E.numrows)
+        E.cx = E.row[E.cy].size;
+      break;
     case PAGE_UP:
     case PAGE_DOWN:
       {
+        if (c == PAGE_UP) {
+          E.cy = E.rowoff;
+        } else if (c == PAGE_DOWN) {
+          E.cy = E.rowoff + E.screenrows - 1;
+          if (E.cy > E.numrows) E.cy = E.numrows;
+        }
+        
         int times = E.screencols;
         while (times--)
           editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
@@ -294,30 +381,51 @@ void writeFile(fs::FS &fs, const char * path, const char * message){
 void initEditor() {
   E.cx = 0;
   E.cy = 0;
+  E.rx = 0;
+  E.rowoff = 0;
+  E.coloff = 0;
   E.screenrows = 25;
   E.screencols = 80;
   E.numrows = 0;
   E.row = NULL;
 }
 
-void xwritef(const char * format, int size, ...)
-{
+void xwritef(const char * format, int size, ...) {
   va_list ap;
   va_start(ap, format);
-  //int size = vsnprintf(nullptr, 0, format, ap) + 1;
   if (size > 0) {
     va_end(ap);
     va_start(ap, format);
     char buf[size + 1];
     vsnprintf(buf, size, format, ap);
-    Serial.write(buf);
-    Terminal.write(buf);
+    
+    Terminal.write("\x1B[?7l"); // disable line wrap
+    Terminal.write(buf, size);
+    
+    /*for (int i = 0; i < size; i++) {
+      if (buf[i] == '\r')Terminal.write("\x1B[?7l");   // disable line wrap
+      Terminal.write(buf[i]);
+    }*/
+    
+    /*int linelen = 0;
+    for (int i = 0; i < size; i++) {
+      if (buf[i] == '\r' || buf[i] == '\n') {
+        Terminal.write(buf[i]);
+        linelen = 0;
+      } else {
+        if (linelen == E.screencols) Terminal.write("\x1B[?7l");
+        //if (linelen && linelen <= E.screencols) Terminal.write("\x1B[?7l");
+        Terminal.write(buf[i]);
+        linelen++;
+      }
+    }*/
+    
+    
   } va_end(ap);
 }
 
 
-void xprintf(const char * format, ...)
-{
+void xprintf(const char * format, ...) {
   va_list ap;
   va_start(ap, format);
   int size = vsnprintf(nullptr, 0, format, ap) + 1;
@@ -326,7 +434,6 @@ void xprintf(const char * format, ...)
     va_start(ap, format);
     char buf[size + 1];
     vsnprintf(buf, size, format, ap);
-    Serial.write(buf);
     Terminal.write(buf);
   } va_end(ap);
 }
@@ -354,8 +461,15 @@ void setup() {
   
   //writeFile(SPIFFS, "/hello.txt", "this is a line");
   //writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\r this is line 3 \n\r");
-  writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\r this is line 3 \n\r this is line 4 \n\r this is line 5 \n\r this is line 6 \n\r this is line 7 \n\r this is line 8 \n\r this is line 9 \n\r this is line 10 \n\r this is line 11 \n\r this is line 12 \n\r this is line 13 \n\r this is line 14 \n\r this is line 15 \n\r this is line 16 \n\r this is line 17 \n\r this is line 18 \n\r this is line 19 \n\r this is line 20 \n\r this is line 21 \n\r this is line 22 \n\r this is line 23 \n\r this is line 24 \n\r this is line 25 \n\r this is line 26 \n\r this is line 27 \n\r this is line  \n\r this is line 28 \n\r this is line 30 \n\r");
+  
+  writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is  \t\t\t   line 2 \n\r123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E\n\r this is line 4 \n\r this is line 5 \n\r this is line 6 \n\r this is line 7 \n\r this is line 8 \n\r this is line 9 \n\r this is line 10 \n\r this is line 11 \n\r this is line 12 \n\r this is line 13 \n\r this is line 14 \n\r this is line 15 \n\r this is line 16 \n\r this is line 17 \n\r this is line 18 \n\r this is line 19 \n\r");
+  
+  //writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\n\r this is line 4 \n\r this is line 5 \n\r this is line 6 \n\r this is line 7 \n\r this is line 8 \n\r this is line 9 \n\r this is line 10 \n\r this is line 11 \n\r this is line 12 \n\r this is line 13 \n\r this is line 14 \n\r this is line 15 \n\r this is line 16 \n\r this is line 17 \n\r this is line 18 \n\r this is line 19 \n\r this is line 20 \n\r this is line 21 \n\r this is line 22 \n\r this is line 23 \n\r this is line 24 \n\r this is line 25 \n\r this is line 26 \n\r this is line 27 \n\r this is line  \n\r this is line 28 \n\r this is line 30 \n\r");
   editorOpen(SPIFFS, "/hello.txt");
+  
+  //xprintf("\e[?7l"); // disable line wrap
+  //Terminal.write("this is first \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\n\r\n\r and if some line goes after? \n\r how much you ignore?\n\r and then even more???\n\r \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!");
+  //Terminal.write("text\twith\ttabs\t\t\t...");
 }
 
 void loop() {
