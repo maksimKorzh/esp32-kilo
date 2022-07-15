@@ -104,6 +104,23 @@ void editorAppendRow(char *s, size_t len) {
   E.numrows++;
 }
 
+void editorRowInsertChar(erow *row, int at, int c) {
+  if (at < 0 || at > row->size) at = row->size;
+  row->chars = (char *)realloc(row->chars, row->size + 2);
+  memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
+  row->size++;
+  row->chars[at] = c;
+  editorUpdateRow(row);
+}
+
+void editorInsertChar(int c) {
+  if (E.cy == E.numrows) {
+    editorAppendRow("", 0);
+  }
+  editorRowInsertChar(&E.row[E.cy], E.cx, c);
+  E.cx++;
+}
+
 size_t getline(char *buf, size_t *size, File *stream)
 {
   char c;
@@ -356,16 +373,23 @@ int editorReadKey() {
           default: return item.ASCII;
         }
       }
-    }
+    } return 0x00;
   }
 
 }
 
 void editorProcessKeypress() {
   int c = editorReadKey();
-  //xprintf("Key: %d %c\n\r", c, c);
+  if (!c) return;
   switch (c) {
-    case HOME_KEY: E.cx = 0; break;
+    /*case CTRL_KEY('q'):
+      write(STDOUT_FILENO, "\x1b[2J", 4);
+      write(STDOUT_FILENO, "\x1b[H", 3);
+      exit(0);
+      break;*/
+    case HOME_KEY:
+      E.cx = 0;
+      break;
     case END_KEY:
       if (E.cy < E.numrows)
         E.cx = E.row[E.cy].size;
@@ -379,8 +403,7 @@ void editorProcessKeypress() {
           E.cy = E.rowoff + E.screenrows - 1;
           if (E.cy > E.numrows) E.cy = E.numrows;
         }
-        
-        int times = E.screencols;
+        int times = E.screenrows;
         while (times--)
           editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
       }
@@ -390,6 +413,9 @@ void editorProcessKeypress() {
     case ARROW_LEFT:
     case ARROW_RIGHT:
       editorMoveCursor(c);
+      break;
+    default:
+      editorInsertChar(c);
       break;
   }
 }
@@ -440,41 +466,6 @@ void initEditor() {
   E.screenrows -= 2;
 }
 
-void xwritef(const char * format, int size, ...) {
-  va_list ap;
-  va_start(ap, format);
-  if (size > 0) {
-    va_end(ap);
-    va_start(ap, format);
-    char buf[size + 1];
-    vsnprintf(buf, size, format, ap);
-    
-    Terminal.write("\x1B[?7l"); // disable line wrap
-    Terminal.write(buf, size);
-    
-    /*for (int i = 0; i < size; i++) {
-      if (buf[i] == '\r')Terminal.write("\x1B[?7l");   // disable line wrap
-      Terminal.write(buf[i]);
-    }*/
-    
-    /*int linelen = 0;
-    for (int i = 0; i < size; i++) {
-      if (buf[i] == '\r' || buf[i] == '\n') {
-        Terminal.write(buf[i]);
-        linelen = 0;
-      } else {
-        if (linelen == E.screencols) Terminal.write("\x1B[?7l");
-        //if (linelen && linelen <= E.screencols) Terminal.write("\x1B[?7l");
-        Terminal.write(buf[i]);
-        linelen++;
-      }
-    }*/
-    
-    
-  } va_end(ap);
-}
-
-
 void xprintf(const char * format, ...) {
   va_list ap;
   va_start(ap, format);
@@ -515,8 +506,8 @@ void setup() {
   writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is  \t\t\t   line 2 \n\r123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E\n\r this is line 4 \n\r this is line 5 \n\r this is line 6 \n\r this is line 7 \n\r this is line 8 \n\r this is line 9 \n\r this is line 10 \n\r this is line 11 \n\r this is line 12 \n\r this is line 13 \n\r this is line 14 \n\r this is line 15 \n\r this is line 16 \n\r this is line 17 \n\r this is line 18 \n\r this is line 19 \n\r");
   
   //writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\n\r this is line 4 \n\r this is line 5 \n\r this is line 6 \n\r this is line 7 \n\r this is line 8 \n\r this is line 9 \n\r this is line 10 \n\r this is line 11 \n\r this is line 12 \n\r this is line 13 \n\r this is line 14 \n\r this is line 15 \n\r this is line 16 \n\r this is line 17 \n\r this is line 18 \n\r this is line 19 \n\r this is line 20 \n\r this is line 21 \n\r this is line 22 \n\r this is line 23 \n\r this is line 24 \n\r this is line 25 \n\r this is line 26 \n\r this is line 27 \n\r this is line  \n\r this is line 28 \n\r this is line 30 \n\r");
-  editorOpen(SPIFFS, "/hello.txt");
-  editorSetStatusMessage("                                HELP: Ctrl-Q = quit");
+  //editorOpen(SPIFFS, "/hello.txt");
+  editorSetStatusMessage("                                 HELP: Ctrl-Q = quit");
   
   //xprintf("\e[?7l"); // disable line wrap
   //Terminal.write("this is first \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\n\r\n\r and if some line goes after? \n\r how much you ignore?\n\r and then even more???\n\r \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!");
