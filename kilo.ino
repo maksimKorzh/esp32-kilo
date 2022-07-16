@@ -18,6 +18,7 @@ fabgl::PS2Controller     PS2Controller;
 #define KILO_TAB_STOP 2
 
 enum editorKey {
+  BACKSPACE = 127,
   ARROW_LEFT = 1000,
   ARROW_RIGHT,
   ARROW_UP,
@@ -28,7 +29,6 @@ enum editorKey {
   PAGE_UP,
   PAGE_DOWN,
   ENTER_KEY,
-  BACKSPACE_KEY,
   ESCAPE_KEY
 };
 
@@ -46,6 +46,7 @@ struct editorConfig {
   int coloff;
   int screenrows;
   int screencols;
+  int dirty;
   int numrows;
   erow *row;
   char *filename;
@@ -91,9 +92,10 @@ void editorUpdateRow(erow *row) {
   row->rsize = idx;
 }
 
-void editorAppendRow(char *s, size_t len) {
+void editorInsertRow(int at, char *s, size_t len) {
+  if (at < 0 || at > E.numrows) return;
   E.row = (erow *)realloc(E.row, sizeof(erow) * (E.numrows + 1));
-  int at = E.numrows;
+  memmove(&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));
   E.row[at].size = len;
   E.row[at].chars = (char *)malloc(len + 1);
   memcpy(E.row[at].chars, s, len);
@@ -102,6 +104,19 @@ void editorAppendRow(char *s, size_t len) {
   E.row[at].render = NULL;
   editorUpdateRow(&E.row[at]);
   E.numrows++;
+  E.dirty++;
+}
+
+void editorFreeRow(erow *row) {
+  free(row->render);
+  free(row->chars);
+}
+void editorDelRow(int at) {
+  if (at < 0 || at >= E.numrows) return;
+  editorFreeRow(&E.row[at]);
+  memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1));
+  E.numrows--;
+  E.dirty++;
 }
 
 void editorRowInsertChar(erow *row, int at, int c) {
@@ -111,14 +126,62 @@ void editorRowInsertChar(erow *row, int at, int c) {
   row->size++;
   row->chars[at] = c;
   editorUpdateRow(row);
+  E.dirty++;
+}
+
+void editorRowAppendString(erow *row, char *s, size_t len) {
+  row->chars = (char *)realloc(row->chars, row->size + len + 1);
+  memcpy(&row->chars[row->size], s, len);
+  row->size += len;
+  row->chars[row->size] = '\0';
+  editorUpdateRow(row);
+  E.dirty++;
 }
 
 void editorInsertChar(int c) {
   if (E.cy == E.numrows) {
-    editorAppendRow("", 0);
+    editorInsertRow(E.numrows, "", 0);
   }
   editorRowInsertChar(&E.row[E.cy], E.cx, c);
   E.cx++;
+}
+
+void editorInsertNewline() {
+  if (E.cx == 0) {
+    editorInsertRow(E.cy, "", 0);
+  } else {
+    erow *row = &E.row[E.cy];
+    editorInsertRow(E.cy + 1, &row->chars[E.cx], row->size - E.cx);
+    row = &E.row[E.cy];
+    row->size = E.cx;
+    row->chars[row->size] = '\0';
+    editorUpdateRow(row);
+  }
+  E.cy++;
+  E.cx = 0;
+}
+
+void editorDelChar() {
+  if (E.cy == E.numrows) return;
+  if (E.cx == 0 && E.cy == 0) return;
+  erow *row = &E.row[E.cy];
+  if (E.cx > 0) {
+    editorRowDelChar(row, E.cx - 1);
+    E.cx--;
+  } else {
+    E.cx = E.row[E.cy - 1].size;
+    editorRowAppendString(&E.row[E.cy - 1], row->chars, row->size);
+    editorDelRow(E.cy);
+    E.cy--;
+  }
+}
+
+void editorRowDelChar(erow *row, int at) {
+  if (at < 0 || at >= row->size) return;
+  memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
+  row->size--;
+  editorUpdateRow(row);
+  E.dirty++;
 }
 
 size_t getline(char *buf, size_t *size, File *stream)
@@ -141,6 +204,41 @@ size_t getline(char *buf, size_t *size, File *stream)
   return count;
 }
 
+char *editorRowsToString(int *buflen) {
+  int totlen = 0;
+  int j;
+  for (j = 0; j < E.numrows; j++)
+    totlen += E.row[j].size + 1;
+  *buflen = totlen;
+  char *buf = (char *)malloc(totlen);
+  char *p = buf;
+  for (j = 0; j < E.numrows; j++) {
+    memcpy(p, E.row[j].chars, E.row[j].size);
+    p += E.row[j].size;
+    *p = '\r';
+    p++;
+  } *--p = '\0';
+  return buf;
+}
+
+void editorSave(fs::FS &fs) {
+  if (E.filename == NULL) return;
+  File fp = fs.open(E.filename, FILE_WRITE);
+  int len;
+  char *buf = editorRowsToString(&len);
+  
+  if(!fp){
+    editorSetStatusMessage("Failed to open file");
+    return;
+  }
+  
+  if(fp.print(buf)) editorSetStatusMessage("File written");
+  else editorSetStatusMessage("Failed to write file!");
+  E.dirty = 0;
+  fp.close();
+  free(buf);
+}
+
 void editorOpen(fs::FS &fs, const char *filename) {
   free(E.filename);
   E.filename = strdup(filename);
@@ -157,12 +255,12 @@ void editorOpen(fs::FS &fs, const char *filename) {
   ssize_t linelen;
 
   while ((linelen = getline(line, &linecap, &fp)) != -1) {
-    while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r')) linelen--;    
-    //xprintf("%d: %s", linelen, line);
-    editorAppendRow(line, linelen);
+    while (linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r')) linelen--;
+    editorInsertRow(E.numrows, line, linelen);
   }
-  
+
   fp.close();
+  E.dirty = 0;
 }
 
 void abAppend(struct abuf *ab, const char *s, int len) {
@@ -230,8 +328,9 @@ void editorDrawRows(struct abuf *ab) {
 void editorDrawStatusBar(struct abuf *ab) {
   abAppend(ab, "\x1b[7m", 4);
   char status[80], rstatus[80];
-  int len = snprintf(status, sizeof(status), "%.20s - %d lines",
-    E.filename ? E.filename : "[No Name]", E.numrows);
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines %s",
+    E.filename ? E.filename : "[No Name]", E.numrows,
+    E.dirty ? "(modified)" : "");
   int rlen = snprintf(rstatus, sizeof(rstatus), "row %d, col %d",
     E.cy + 1, E.cx + 1);
   if (len > E.screencols) len = E.screencols;
@@ -340,13 +439,12 @@ int editorReadKey() {
   while (!keyboard->virtualKeyAvailable()) {/* wait for a key press */}
   VirtualKeyItem item;
   if (keyboard->getNextVirtualKey(&item)) {
-  
     // debug
     /*if (item.down) {
       xprintf("Scan codes: ");
-      xprintf("0x%02X 0x%02X 0x%02X\n\r", item.scancode[0], item.scancode[1], item.scancode[2]);
+      xprintf("ctrl %d  0x%02X 0x%02X 0x%02X\n\r", control_key, item.scancode[0], item.scancode[1], item.scancode[2]);
     }*/
-    
+
     if (item.down) {
       if (item.scancode[0] == 0xE0) {
         switch (item.scancode[1]) {
@@ -364,7 +462,7 @@ int editorReadKey() {
         switch (item.scancode[0]) {
           case 0x76: return ESCAPE_KEY;
           case 0x5A: return ENTER_KEY;
-          case 0x66: return BACKSPACE_KEY;
+          case 0x66: return BACKSPACE;
           default: return item.ASCII;
         }
       }
@@ -377,11 +475,10 @@ void editorProcessKeypress() {
   int c = editorReadKey();
   if (!c) return;
   switch (c) {
-    /*case CTRL_KEY('q'):
-      write(STDOUT_FILENO, "\x1b[2J", 4);
-      write(STDOUT_FILENO, "\x1b[H", 3);
-      exit(0);
-      break;*/
+    case ENTER_KEY:
+      editorInsertNewline();
+      //editorSave(SPIFFS);
+      break;
     case HOME_KEY:
       E.cx = 0;
       break;
@@ -389,6 +486,15 @@ void editorProcessKeypress() {
       if (E.cy < E.numrows)
         E.cx = E.row[E.cy].size;
       break;
+    
+    case BACKSPACE:
+      if (c == DEL_KEY) editorMoveCursor(ARROW_RIGHT);
+      editorDelChar();
+      break;
+    case ESCAPE_KEY:
+      editorSave(SPIFFS);
+      break;  
+    
     case PAGE_UP:
     case PAGE_DOWN:
       {
@@ -409,39 +515,44 @@ void editorProcessKeypress() {
     case ARROW_RIGHT:
       editorMoveCursor(c);
       break;
+    
     default:
       editorInsertChar(c);
+      editorSetStatusMessage("");
       break;
   }
 }
 
-void readFile(fs::FS &fs, const char * path){
-   //Serial.printf("Reading file: %s\n\r", path);
-
+void readFile(fs::FS &fs, const char * path) {
    File file = fs.open(path);
-   if(!file || file.isDirectory()){
-       //Serial.println("− failed to open file for reading");
-       return;
-   }
-
-   //Serial.println("− read from file:");
-   while(file.available()){
-      Serial.write(file.read());
-   }
+   while(file.available()) xprintf("%c", file.read());
 }
 
-void writeFile(fs::FS &fs, const char * path, const char * message){
-   //xprintf("Writing file: %s\n\r", path);
-
+void writeFile(fs::FS &fs, const char * path, const char * message) {
    File file = fs.open(path, FILE_WRITE);
    if(!file){
-      //xprintf("− failed to open file for writing\n\r");
+      xprintf("− failed to open file for writing\n\r");
       return;
    }
-   if(file.print(message)){
-      //xprintf("− file written\n\r");
-   }else {
-      //xprintf("− frite failed\n\r");
+   if(file.print(message)) xprintf("− file written\n\r");
+   else xprintf("− frite failed\n\r");
+}
+
+void deleteFile(fs::FS &fs, const char * path){
+   xprintf("Deleting file: %s\r\n", path);
+   if(fs.remove(path)) xprintf("− file deleted\n\r");
+   else { xprintf("− delete failed\n\r"); }
+}
+
+void listDir(fs::FS &fs){
+   File root = fs.open("/");
+   File file = root.openNextFile();
+   while(file){
+      xprintf("  FILE: ");
+      xprintf("%s", file.name());
+      xprintf("\tSIZE: ");
+      xprintf("%d\n\r", file.size());
+      file = root.openNextFile();
    }
 }
 
@@ -455,6 +566,7 @@ void initEditor() {
   E.screencols = 80;
   E.numrows = 0;
   E.row = NULL;
+  E.dirty = 0;
   E.filename = NULL;
   E.statusmsg[0] = '\0';
   E.statusmsg_time = 0;
@@ -494,9 +606,14 @@ void setup() {
   // init text editor
   initEditor();    
   
-  writeFile(SPIFFS, "/hello.txt", "this is first \n\r this is line 2 \n\rhello 00000000000000000123456789 123456789 123456789 123456789 123456789 123456789 123456789 12345678E    this one is really looong!!!!!\n\r\n\r this is line 4 \n\r this is line 5 \n\r this is line 6 \n\r this is line 7 \n\r this is line 8 \n\r this is line 9 \n\r this is line 10 \n\r this is line 11 \n\r this is line 12 \n\r this is line 13 \n\r this is line 14 \n\r this is line 15 \n\r this is line 16 \n\r this is line 17 \n\r this is line 18 \n\r this is line 19 \n\r this is line 20 \n\r this is line 21 \n\r this is line 22 \n\r this is line 23 \n\r this is line 24 \n\r this is line 25 \n\r this is line 26 \n\r this is line 27 \n\r this is line  \n\r this is line 28 \n\r this is line 30 \n\r");
-  editorOpen(SPIFFS, "/hello.txt");
-  editorSetStatusMessage("                                HELP: Ctrl-Q = quit");
+  //deleteFile(SPIFFS, "/hello.txt");
+  //deleteFile(SPIFFS, "/session.txt");
+  //writeFile(SPIFFS, "/hello.txt", "Hello world!\n\r");
+  //readFile(SPIFFS, "/hello.txt");
+  //listDir(SPIFFS);
+  editorOpen(SPIFFS, "/hello.c"); // you need to write it first via writeFile()
+  editorSetStatusMessage("                           Press ESCAPE to save file                            ");
+
 }
 
 void loop() {
