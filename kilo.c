@@ -362,32 +362,9 @@ void editorRefreshScreen() {
   snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
                                             (E.rx - E.coloff) + 1);
   abAppend(&ab, buf, strlen(buf));
-  //Terminal.write(ab.b, ab.len);
+  // Write buffer ab to screen / serial port
   abFree(&ab);
 }
-
-/*void editorSetStatusMessage(const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
-  va_end(ap);
-  E.statusmsg_time = time(NULL);
-}*/
-
-/*int getCursorPosition(int *rows, int *cols) {
-  char buf[32];
-  unsigned int i = 0;
-  //if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return -1;
-  while (i < sizeof(buf) - 1) {
-    //if (read(STDIN_FILENO, &buf[i], 1) != 1) break;
-    if (buf[i] == 'R') break;
-    i++;
-  }
-  buf[i] = '\0';
-  if (buf[0] != '\x1b' || buf[1] != '[') return -1;
-  if (sscanf(&buf[2], "%d;%d", rows, cols) != 2) return -1;
-  return 0;
-}*/
 
 void editorMoveCursor(int key) {
   erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
@@ -428,40 +405,8 @@ void editorMoveCursor(int key) {
 }
 
 int editorReadKey() {
-// auto keyboard = PS2Controller.keyboard();
-// while (!keyboard->virtualKeyAvailable()) {/* wait for a key press */}
-// VirtualKeyItem item;
-// if (keyboard->getNextVirtualKey(&item)) {
-//   // debug
-//   /*if (item.down) {
-//     xprintf("Scan codes: ");
-//     xprintf("ctrl %d  0x%02X 0x%02X 0x%02X\n\r", control_key, item.scancode[0], item.scancode[1], item.scancode[2]);
-//   }*/
-//
-//   if (item.down) {
-//     if (item.scancode[0] == 0xE0) {
-//       switch (item.scancode[1]) {
-//         case 0x6B: return ARROW_LEFT;
-//         case 0x74: return ARROW_RIGHT;
-//         case 0x75: return ARROW_UP;
-//         case 0x72: return ARROW_DOWN;
-//         case 0x71: return DEL_KEY;
-//         case 0x6C: return HOME_KEY;
-//         case 0x69: return END_KEY;
-//         case 0x7D: return PAGE_UP;
-//         case 0x7A: return PAGE_DOWN;
-//       }
-//     } else {
-//       switch (item.scancode[0]) {
-//         case 0x76: return ESCAPE_KEY;
-//         case 0x5A: return ENTER_KEY;
-//         case 0x66: return BACKSPACE;
-//         default: return item.ASCII;
-//       }
-//     }
-//   } return 0x00;
-// }
-//
+  // Implement function to return key code from keyboard
+  // return KEY_CODE
 }
 
 void editorProcessKeypress() {
@@ -470,7 +415,6 @@ void editorProcessKeypress() {
   switch (c) {
     case ENTER_KEY:
       editorInsertNewline();
-      //editorSave(SPIFFS);
       break;
     case HOME_KEY:
       E.cx = 0;
@@ -485,7 +429,6 @@ void editorProcessKeypress() {
       editorDelChar();
       break;
     case ESCAPE_KEY:
-      //editorSave(SPIFFS);
       break;  
     
     case PAGE_UP:
@@ -511,43 +454,9 @@ void editorProcessKeypress() {
     
     default:
       editorInsertChar(c);
-      //editorSetStatusMessage("");
       break;
   }
 }
-
-/*void readFile(fs::FS &fs, const char * path) {
-   File file = fs.open(path);
-   while(file.available()) xprintf("%c", file.read());
-}
-
-void writeFile(fs::FS &fs, const char * path, const char * message) {
-   File file = fs.open(path, FILE_WRITE);
-   if(!file){
-      xprintf("− failed to open file for writing\n\r");
-      return;
-   }
-   if(file.print(message)) xprintf("− file written\n\r");
-   else xprintf("− frite failed\n\r");
-}
-
-void deleteFile(fs::FS &fs, const char * path){
-   xprintf("Deleting file: %s\r\n", path);
-   if(fs.remove(path)) xprintf("− file deleted\n\r");
-   else { xprintf("− delete failed\n\r"); }
-}
-
-void listDir(fs::FS &fs){
-   File root = fs.open("/");
-   File file = root.openNextFile();
-   while(file){
-      xprintf("  FILE: ");
-      xprintf("%s", file.name());
-      xprintf("\tSIZE: ");
-      xprintf("%d\n\r", file.size());
-      file = root.openNextFile();
-   }
-}*/
 
 void initEditor() {
   E.cx = 0;
@@ -566,52 +475,12 @@ void initEditor() {
   E.screenrows -= 2;
 }
 
-/*void xprintf(const char * format, ...) {
-  va_list ap;
-  va_start(ap, format);
-  int size = vsnprintf(nullptr, 0, format, ap) + 1;
-  if (size > 0) {
-    va_end(ap);
-    va_start(ap, format);
-    char buf[size + 1];
-    vsnprintf(buf, size, format, ap);
-    Terminal.write(buf);
-  } va_end(ap);
-}*/
-
-/*void setup() {
-  // init serial port
-  Serial.begin(115200);
-  delay(500);  // avoid garbage into the UART
-  
-  // ESP32 peripherals setup
-  PS2Controller.begin(PS2Preset::KeyboardPort0);
-  DisplayController.begin();
-  DisplayController.setResolution(VGA_640x480_60Hz);
-  Terminal.begin(&DisplayController);
-  
-  // init SPIFFS
-  if(!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)){
-    xprintf("SPIFFS Mount Failed");
-    return;
-  }
-  
-  // init text editor
-  initEditor();    
-  
-  //deleteFile(SPIFFS, "/hello.txt");
-  //deleteFile(SPIFFS, "/session.txt");
-  //writeFile(SPIFFS, "/hello.txt", "Hello world!\n\r");
-  //readFile(SPIFFS, "/hello.txt");
-  //listDir(SPIFFS);
-  editorOpen(SPIFFS, "/hello.c"); // you need to write it first via writeFile()
-  editorSetStatusMessage("                           Press ESCAPE to save file                            ");
-
+void setup() {
+  // Init keyboard
+  // Init VT100
 }
 
 void loop() {
   editorRefreshScreen();
   editorProcessKeypress();
-}*/
-
-int main() { return 0; }
+}
